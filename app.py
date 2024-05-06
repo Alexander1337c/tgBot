@@ -1,5 +1,6 @@
 import os
 import asyncio
+import locale
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommandScopeAllPrivateChats
 from aiogram.enums import ParseMode
@@ -10,11 +11,12 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv())
 from database.engine import create_db, drop_db, session_maker
 from common.bot_commands_private import private
-from handlers import card_handlers, user_private, admin_handlers
+from handlers import card_handlers, user_private, admin_handlers, transaction_handlers
 from middlewares.db import DataBaseSession
 
 
 # ALLOWED_UPDATE = ['message', 'edited_message']
+locale.setlocale(locale.LC_ALL, "")
 
 bot = Bot(token=os.getenv('TOKEN'),
           default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -24,6 +26,7 @@ dp = Dispatcher()
 dp.include_router(user_private.user_private_router)
 dp.include_router(card_handlers.add_card_private_router)
 dp.include_router(admin_handlers.admin_router)
+dp.include_router(transaction_handlers.transaction_private_router)
 
 async def on_startup(bot):
 
