@@ -4,9 +4,11 @@ from aiogram.filters import CommandStart, Command, or_f
 from aiogram.utils.formatting import Bold, as_marked_list, as_marked_section, Italic, as_list
 from filters.chat_types import ChatTypeFilter
 from kbds.reply import get_keyboard
-from kbds.inline import get_callback_btns
+from kbds.inline import get_callback_btns, StatCallBack
+from handlers.inline_kb_level_menu import main_menu_stat
 
-from database.orm_query import orm_get_cards, orm_add_card, orm_create_user, orm_get_user, orm_get_categories, orm_get_transactions_categories, orm_get_spending_account, orm_get_all_transactions
+
+from database.orm_query import orm_get_cards, orm_add_card, orm_create_user, orm_get_user 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -79,43 +81,31 @@ async def cmd_about(message: types.Message):
     )
     await message.answer(text.as_html())
 
+command_list = {'Статистика по категориям','Все транзакции', 'Расходы', 'Доходы'}
+@user_private_router.message(F.text.in_(command_list))
+async def cmd_balance_total(message: types.Message, session: AsyncSession):
+    
+    text, reply_markup = await main_menu_stat(session, text=message.text, level=0, user_id=message.from_user.id)
+    await message.answer(text=text, reply_markup=reply_markup)
+
+@user_private_router.callback_query(StatCallBack.filter())
+async def date_menu(callback: types.CallbackQuery, callback_data: StatCallBack, session: AsyncSession):
+
+    print(callback_data)
+    text, reply_markup = await main_menu_stat(session, level=callback_data.level, text=callback_data.text, user_id=callback.from_user.id, current_month=callback_data.cur_month, current_year=callback_data.cur_year)
+    
+    await callback.message.edit_text(text=text, reply_markup=reply_markup)
+    
+    await callback.answer()
 
 @user_private_router.message(F.text == 'Остаток по источникам')
-async def cmd_balance_total(message: types.Message, session: AsyncSession):
+async def cmd_stat_for_category(message: types.Message, session: AsyncSession):
     cards = await orm_get_cards(session, int(message.from_user.id))
     if cards:
         text = [f'{card.name} <strong>остаток</strong> {card.balance}' for card in cards]
         return await message.answer('\n'.join(text))
     return await message.answer(f'У вас пока нет источников средств', reply_markup=MAIN_MENU)
 
-@user_private_router.message(F.text == 'Статистика по категориям')
-async def cmd_stat_for_category(message: types.Message, session: AsyncSession):
-    spendings = await orm_get_transactions_categories(session, message.from_user.id)
-    total_sum = sum([spent[3] for spent in spendings])
-    month = date.today().strftime("%B")
-    year = date.today().year
-    text = [
-        f'{spent[2]}  {spent[1]} - <strong>{spent[3]}</strong>' for spent in spendings]
-    await message.answer(f'Траты за    <b>{month}, {year}</b>\n----------------------------\n' + '\n'.join(text) + f'\n----------------------------\nОбщая сумма:    <b>{total_sum}</b> руб')
-
-
-@user_private_router.message(or_f(F.text == 'Расходы', F.text == 'Доходы'))
-async def cmd_spending(message: types.Message, session: AsyncSession):
-    month = date.today().strftime("%B")
-    year = date.today().year
-    accounts = await orm_get_spending_account(session, message.from_user.id, income=message.text)
-    total = sum([spent[2] for spent in accounts])
-    text = [
-        f'{spent[1]} - <strong>{spent[2]}</strong>' for spent in accounts]
-    await message.answer(f'{message.text} за    <b>{month}, {year}</b>\n----------------------------\n' + '\n'.join(text) + f'\n----------------------------\nОбщая сумма:    <b>{total}</b> руб')
-
-@user_private_router.message(F.text == 'Все транзакции')
-async def cmd_all_transactions(message: types.Message, session: AsyncSession):
-    month = date.today().strftime("%B")
-    year = date.today().year
-    transactions = await orm_get_all_transactions(session, message.from_user.id)
-    text = [
-        f'{tran.amount} | {tran.account.name} | {tran.category.icon} {tran.category.name} | {str(tran.created).split(".")[0]}\n----------------------------' for tran in transactions
-    ]
-    await message.answer(f'{message.text} за    <b>{month}, {year}</b>\n----------------------------------------\n' + '\n'.join(text))
+    
 # ///##############################################################3 для тестированя
+

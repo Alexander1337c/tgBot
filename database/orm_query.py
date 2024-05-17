@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, date
+from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import Account, User, Category, Transaction
-from sqlalchemy import select, update, delete, func, extract
+from sqlalchemy import select, update, delete, func, extract, desc, sql
 from sqlalchemy.orm import joinedload
 
 
@@ -102,29 +103,53 @@ async def orm_add_transaction(session: AsyncSession, user_id, account_id, amount
     session.add(obj)
     await session.commit()
 
-# .options(joinedload(Transaction.category))
 
-async def orm_get_transactions_categories(session: AsyncSession, user_id, date: datetime = None):
-    if not date:
-        date = datetime.now().month
-    query = select(Transaction.category_id, Category.name, Category.icon, func.sum(Transaction.amount).label('sum')).filter(Transaction.user_id == user_id, Transaction.income == False, extract('month', Transaction.created) == int(date)).join(Transaction, Transaction.category_id == Category.id).group_by(Transaction.category_id, Category.name, Category.icon)
+async def orm_get_transactions_categories_month(session: AsyncSession, user_id, current_month: int | None = None):
+    if not current_month:
+        current_month = datetime.now().month
+    query = select(Transaction.category_id, Category.name, Category.icon, func.sum(Transaction.amount).label('sum')).filter(Transaction.user_id == user_id, Transaction.income == False, extract('month', Transaction.created) == current_month).join(Transaction, Transaction.category_id == Category.id).group_by(Transaction.category_id, Category.name, Category.icon)
     result = await session.execute(query)
     return result.all()
 
-async def orm_get_all_transactions(session: AsyncSession, user_id, date: datetime=None):
-    if not date:
-        date = datetime.now().month
-    # query = select(Transaction.amount, Category.name, Transaction.created).filter(Transaction.user_id == user_id, extract('month', Transaction.created) == date).join(Transaction, Transaction.category_id == Category.id)
-    query = select(Transaction).options(joinedload(Transaction.category), joinedload(Transaction.account)).filter(Transaction.user_id == user_id, extract('month', Transaction.created) == date)
+async def orm_get_transactions_category_year(session: AsyncSession, user_id, cur_year: int, cur_month: int):
+    query = select(Transaction.category_id, Category.name, Category.icon, func.sum(Transaction.amount).label('sum_2')).filter(Transaction.user_id == user_id, Transaction.income == False, extract('year', Transaction.created) == cur_year, extract('month', Transaction.created) == cur_month).join(Transaction, Transaction.category_id == Category.id).group_by(Transaction.category_id, Category.name, Category.icon)
+    result = await session.execute(query)
+    return result.all()
+
+
+
+async def orm_get_all_transactions_year(session: AsyncSession, user_id, cur_year: int, cur_month: int):
+    query = select(Transaction).options(joinedload(Transaction.category), joinedload(Transaction.account)).filter(Transaction.user_id == user_id, extract('year', Transaction.created)==cur_year, extract('month', Transaction.created)==cur_month).order_by(desc(Transaction.created))
     result = await session.execute(query)
     return result.scalars().all()
 
-async def orm_get_spending_account(session: AsyncSession, user_id, income: str, date: datetime = None):
-    if not date:
-        date = datetime.now().month
+async def orm_get_all_transactions_month(session: AsyncSession, user_id, cur_month: int | None = None):
+    if not cur_month:
+        cur_month =  datetime.now().month
+    query = select(Transaction).options(joinedload(Transaction.category), joinedload(Transaction.account)).filter(Transaction.user_id == user_id, extract('month', Transaction.created) == cur_month).order_by(desc(Transaction.created))
+    result = await session.execute(query)
+    return result.scalars().all()
+
+async def orm_get_spending_account(session: AsyncSession, user_id, income: str, cur_month:int | None = None, cur_year:int | None = None):
+    query = None
     bool_income = False
     if income == 'Доходы':
         bool_income = True
-    query = select(Transaction.account_id, Account.name, func.sum(Transaction.amount).label('sum')).filter(Transaction.user_id == user_id, Transaction.income == bool_income, extract('month', Transaction.created) == int(date)).join(Transaction, Transaction.account_id == Account.id).group_by(Transaction.account_id, Account.name)
+    if not cur_month:
+        cur_month = datetime.now().month
+        query = select(Transaction.account_id, Account.name, func.sum(Transaction.amount).label('sum')).filter(Transaction.user_id == user_id, Transaction.income == bool_income, extract("month", Transaction.created) == cur_month ).join(Transaction, Transaction.account_id == Account.id).group_by(Transaction.account_id, Account.name)
+    elif cur_year and cur_month:
+        query = select(Transaction.account_id, Account.name, func.sum(Transaction.amount).label('sum')).filter(Transaction.user_id == user_id, Transaction.income == bool_income, extract('year', Transaction.created) == cur_year, extract('month', Transaction.created) == cur_month ).join(Transaction, Transaction.account_id == Account.id).group_by(Transaction.account_id, Account.name)
+    
+    result = await session.execute(query)
+    return result.all()
+
+async def orm_get_spending_account_year(session: AsyncSession, user_id, income: str, cur_month:int, cur_year: int):
+    if not cur_month:
+        cur_month = datetime.now().month
+    bool_income = False
+    if income == 'Доходы':
+        bool_income = True
+    query = select(Transaction.account_id, Account.name, func.sum(Transaction.amount).label('sum')).filter(Transaction.user_id == user_id, Transaction.income == bool_income, extract('year', Transaction.created) == cur_year, extract('month', Transaction.created) == cur_month).join(Transaction, Transaction.account_id == Account.id).group_by(Transaction.account_id, Account.name)
     result = await session.execute(query)
     return result.all()
