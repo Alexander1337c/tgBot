@@ -38,8 +38,8 @@ async def cmd_add_category(message: types.Message, state: FSMContext):
 
 @admin_router.message(AddCategory.name, F.text)
 async def cmd_add_name_category(message: types.Message, state: FSMContext, session: AsyncSession):
-    if len(message.text.split('-')) != 2:
-        await message.answer('Некоректный ввод')
+    if len(message.text) < 3:
+        await message.answer('Некоректный ввод. Введите минимум 3 символа')
         return
     await state.update_data(name=message.text)
     data = await state.get_data()
@@ -55,7 +55,7 @@ async def cmd_get_categories(message: types.Message, session: AsyncSession):
             'Удалить': f'del_{category.id}',
         }))
 
-    await message.answer('Категории')
+    await message.answer('Категории ⏫')
 
 
 @admin_router.callback_query(F.data.startswith('del_'))

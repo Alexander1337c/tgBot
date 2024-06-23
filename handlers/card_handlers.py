@@ -1,4 +1,4 @@
-from aiogram import types, Router, F
+from aiogram import types, Router, F, Bot
 from aiogram.filters import CommandStart, Command, or_f, StateFilter
 from aiogram.utils.formatting import Bold, as_marked_list, as_marked_section
 from filters.chat_types import ChatTypeFilter
@@ -17,23 +17,25 @@ add_card_private_router.message.filter(ChatTypeFilter(['private']))
 
 class AddCard(StatesGroup):
     name = State()
-    limit = State()
+    balance = State()
 
     card_for_change = None
     texts = {
         'AddCard:name': 'Введите название заново:',
-        'AddCard:limit': 'Введите лимит заново:',
+        'AddCard:balance': 'Введите баланс заново:',
     }
 
 
 @add_card_private_router.message(F.text == 'Источники средств')
 async def get_accounts_handler(message: types.Message, session: AsyncSession):
-    for card in await orm_get_cards(session):
-        await message.answer(f'{card.name} лимит: {round(card.limit, 2)}', reply_markup=get_callback_btns(btns={
-            'Удалить': f'delete_{card.id}',
-            'Изменить': f'update_{card.id}',
-        }))
-    await message.answer('Список ваших источников средств')
+    if await orm_get_cards(session, int(message.from_user.id)):
+        for card in await orm_get_cards(session, int(message.from_user.id)):
+            await message.answer(f'<strong>{card.name}</strong> - Баланс: {round(card.balance, 2)}', reply_markup=get_callback_btns(btns={
+                'Удалить': f'delete_{card.id}',
+                'Изменить': f'update_{card.id}',
+            }))
+        return await message.answer('Список ваших источников средств ⏫')
+    return await message.answer('У Вас пока нет источников средств')
 
 
 @add_card_private_router.callback_query(F.data.startswith('delete_'))
@@ -41,8 +43,8 @@ async def delete_card_handler(callback: types.CallbackQuery, session: AsyncSessi
     card_id = callback.data.split('_')[-1]
     await orm_delete_card(session, int(card_id))
 
-    await callback.answer('Карта удалена')
-    await callback.message.answer(reply_markup=MAIN_MENU)
+    # await callback.message.answer(text='Карта удалена', reply_markup=MAIN_MENU)
+    await callback.message.delete()
 
 
 @add_card_private_router.callback_query(StateFilter(None), F.data.startswith('update_'))
@@ -63,14 +65,14 @@ async def update_card_handlers(callback: types.CallbackQuery, state: FSMContext,
 
 @add_card_private_router.message(StateFilter('*'), Command('отмена'))
 @add_card_private_router.message(StateFilter('*'), or_f(F.text.casefold() == 'отмена', F.text == 'Отмена'))
-async def cancel_add_card_handler(message: types.Message, state: FSMContext):
+async def cancel_add_card_handler(message: types.Message, state: FSMContext, bot: Bot):
     current_state = await state.get_state()
     if current_state is None:
         return
     if AddCard.card_for_change:
         AddCard.card_for_change = None
     await state.clear()
-    if message.text == 'Отмена':
+    if message.text == 'Отмена' and message.from_user.id in bot.my_admins_list:
         return await message.answer('Меню админа', reply_markup=ADMIN_KB)
     await message.answer('Действия отменены', reply_markup=MAIN_MENU)
 
@@ -106,12 +108,12 @@ async def cmd_add_card(message: types.Message, state: FSMContext):
 
 @add_card_private_router.message(AddCard.name, or_f(F.text.isupper(), F.text == '.'))
 async def cmd_add_name_card(message: types.Message, state: FSMContext):
-    if message.text == '.':
+    if message.text == '.' and AddCard.card_for_change:
         await state.update_data(name=AddCard.card_for_change.name)
     else:
         await state.update_data(name=message.text)
-    await message.answer("Введите лимит расхода в неделюю. Например '200'")
-    await state.set_state(AddCard.limit)
+    await message.answer("Введите начальный баланс. Например '200'")
+    await state.set_state(AddCard.balance)
 
 
 @add_card_private_router.message(AddCard.name)
@@ -119,12 +121,12 @@ async def cmd_add_name_card2(message: types.Message, state: FSMContext):
     await message.answer("Некоректный ввод. Только большие буквы. 'КАРТА1'")
 
 
-@add_card_private_router.message(AddCard.limit, or_f(F.text.isdigit(), F.text == '.'))
-async def add_card_limit_handler(message: types.Message, state: FSMContext, session: AsyncSession):
-    if message.text == '.':
-        await state.update_data(limit=AddCard.card_for_change.limit)
+@add_card_private_router.message(AddCard.balance, or_f(F.text.isdigit(), F.text == '.'))
+async def add_card_balance_handler(message: types.Message, state: FSMContext, session: AsyncSession):
+    if message.text == '.' and AddCard.card_for_change:
+        await state.update_data(balance=AddCard.card_for_change.balance)
     else:
-        await state.update_data(limit=message.text)
+        await state.update_data(balance=message.text)
     data = await state.get_data()
     data['user_id'] = message.from_user.id
     try:
@@ -139,6 +141,7 @@ async def add_card_limit_handler(message: types.Message, state: FSMContext, sess
         await state.clear()
     AddCard.card_for_change = None
 
-@add_card_private_router.message(AddCard.limit)
-async def add_card_limit_handler(message: types.Message, state: FSMContext):
+@add_card_private_router.message(AddCard.balance)
+async def add_card_balance_handler(message: types.Message, state: FSMContext):
     await message.answer('Некоректный воод. Введите число')
+  
